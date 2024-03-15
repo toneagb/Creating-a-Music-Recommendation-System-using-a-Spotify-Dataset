@@ -1,0 +1,521 @@
+---
+title: "Creating a Music Recommendation System using a Spotify Dataset"
+author: "Toneukarin Agbeyegbe"
+date: "2024-03-09"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+# Library Import
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(plotly)
+library(cluster)
+library(factoextra)
+library(Matrix)
+
+# Suppress warnings
+options(warn=-1)
+
+# Data Loading
+data <- read_csv("C:\\Users\\Owner\\Onedrive\\Documents\\Rscripts\\spotify\\data.csv")
+genre_data <- read_csv("C:\\Users\\Owner\\Onedrive\\Documents\\Rscripts\\spotify\\data_by_genres.csv")
+year_data <- read_csv("C:\\Users\\Owner\\Onedrive\\Documents\\Rscripts\\spotify\\data_by_year.csv")
+
+# Displaying dataset information (example for one dataset)
+#str(data)
+glimpse(data)
+```
+
+## In
+
+```{r}
+str(year_data)
+
+```
+
+
+```{r}
+# Calculating correlations
+cor_matrix <- cor(data[c('acousticness', 'danceability', 'energy', 'instrumentalness',
+                         'liveness', 'loudness', 'speechiness', 'tempo', 'valence',
+                         'duration_ms', 'explicit', 'key', 'mode', 'year', 'popularity')])
+
+# Visualizing feature correlation with the target variable 'popularity'
+library(corrplot)
+corrplot(cor_matrix, method = "circle")
+
+
+```
+```{r}
+
+# Assuming 'data' is your dataframe and it's appropriately preprocessed
+feature_names <- c('acousticness', 'danceability', 'energy', 'instrumentalness',
+                   'liveness', 'loudness', 'speechiness', 'tempo', 'valence',
+                   'duration_ms', 'explicit', 'key', 'mode', 'year')
+
+# Calculate correlation of features with the target variable 'popularity'
+correlations <- sapply(data[feature_names], function(feature) cor(feature, data$popularity, use="complete.obs"))
+
+# Convert correlations to a dataframe for visualization
+cor_df <- data.frame(feature = names(correlations), correlation = correlations)
+
+
+```
+## Step 2: Visualize the Correlations
+
+We can use ggplot2 to create a bar plot showing the correlation of each feature with the target variable "popularity." This visualization makes it easier to identify which features have stronger relationships with the target variable.
+
+```{r}
+library(ggplot2)
+
+ggplot(cor_df, aes(x=reorder(feature, correlation), y=correlation)) +
+  geom_bar(stat="identity", fill="skyblue") +
+  coord_flip() +  # Flip coordinates for better readability
+  theme_minimal() +
+  labs(x = "Feature", y = "Correlation with Popularity", title = "Feature Correlation with Popularity")
+
+
+```
+##You can directly calculate the correlations and plot them without converting the dataframe to long format for this particular case:
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Assuming 'data' is your dataframe and 'popularity' is the target variable
+features <- c('acousticness', 'danceability', 'energy', 'instrumentalness',
+              'liveness', 'loudness', 'speechiness', 'tempo', 'valence',
+              'duration_ms', 'explicit', 'key', 'mode', 'year')
+
+# Calculate correlations with 'popularity'
+correlations <- sapply(data[features], function(feature) cor(feature, data$popularity, use = "complete.obs"))
+
+# Convert correlations to a dataframe for plotting
+cor_df <- data.frame(feature = names(correlations), correlation = correlations)
+
+# Plot the correlations
+ggplot(cor_df, aes(x = feature, y = correlation)) +
+  geom_col() + # This is the correct geom for bar plots when data is already summarised
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 65, hjust = 1)) +
+  labs(x = "Feature", y = "Correlation with Popularity", title = "Feature Correlation with Popularity")
+
+
+
+```
+
+```{r}
+
+library(ggplot2)
+
+# Function to calculate decade
+get_decade <- function(year) {
+  paste0(as.integer(year / 10) * 10, "s")
+}
+
+# Add decade column
+data$decade <- sapply(data$year, get_decade)
+
+# Plot count of songs by decade
+ggplot(data, aes(x = decade)) +
+  geom_bar() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Decade", y = "Count", title = "Count of Songs by Decade")
+
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Your sound features
+sound_features <- c('acousticness', 'danceability', 'energy', 'instrumentalness', 'liveness', 'valence')
+
+# Reshaping the data from wide to long format
+year_data_long <- year_data %>%
+  pivot_longer(cols = sound_features, names_to = "feature", values_to = "value")
+
+# Plotting with ggplot2
+ggplot(year_data_long, aes(x = year, y = value, color = feature)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Sound Features Over Time", x = "Year", y = "Feature Value") +
+  scale_color_viridis_d()
+
+
+```
+###     Red: #FF0000
+    Green: #008000
+    Blue: #0000FF
+    Yellow: #FFFF00
+    Orange: #FFA500
+    Purple: #800080
+    Cyan: #00FFFF
+    Magenta: #FF00FF
+    Lime: #00FF00
+    Pink: #FFC0CB
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Assuming year_data_long is already created from previous step
+
+# Defining distinct colors for the first three features and another color for the rest
+distinct_colors <- c(acousticness = "#E41A1C", # Red
+                     danceability = "#377EB8", # Blue
+                     energy = "#4DAF4A", # Green
+                     instrumentalness = "#6A3D9A", # Purple for the rest (example)
+                     liveness = "#FFFF00", # Yellow
+                     valence = "#800080") #Purple
+
+# Plotting with ggplot2
+ggplot(year_data_long, aes(x = year, y = value, color = feature)) +
+  geom_line() +
+  scale_color_manual(values = distinct_colors) +
+  theme_minimal() +
+  labs(title = "Sound Features Over Time", x = "Year", y = "Feature Value")
+```
+
+
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Assuming 'genre_data' is your dataframe
+top10_genres <- genre_data %>% 
+  arrange(desc(popularity)) %>%
+  slice(1:10)
+
+# Reshaping the data from wide to long format
+top10_genres_long <- top10_genres %>%
+  pivot_longer(cols = c('valence', 'energy', 'danceability', 'acousticness'), 
+               names_to = "feature", values_to = "value")
+
+### Creating the Grouped Bar Chart
+
+# Plot
+ggplot(top10_genres_long, aes(x = genres, y = value, fill = feature)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Genre", y = "Feature Value", title = "Characteristics of Different Genres") +
+  scale_fill_brewer(palette = "Set3")
+
+```
+##Clustering Genres with K-Means
+
+```{r}
+
+if (!requireNamespace("factoextra", quietly = TRUE)) install.packages("factoextra")
+if (!requireNamespace("Rtsne", quietly = TRUE)) install.packages("Rtsne")
+
+library(factoextra)
+library(Rtsne)
+library(dplyr)
+library(ggplot2)
+
+
+```
+
+```{r}
+# Assuming 'genre_data' is your dataframe and contains numerical audio features only for this part
+
+# Scaling the data
+X_scaled <- scale(genre_data %>% select_if(is.numeric))
+
+# Applying K-Means clustering
+set.seed(123) # For reproducibility
+kmeans_result <- kmeans(X_scaled, centers = 10, nstart = 25)
+
+# Adding cluster results to the original data
+genre_data$cluster <- as.factor(kmeans_result$cluster)
+```
+
+
+
+##     Red: #E41A1C
+    Blue: #377EB8
+    Green: #4DAF4A
+    Purple: #984EA3
+    Orange: #FF7F00
+    Yellow: #FFFF33
+    Brown: #A65628
+    Pink: #F781BF
+    Grey: #999999
+    Light Blue: #A6CEE3
+    
+    
+```{r}
+
+# Remove duplicates from the scaled data
+X_scaled_unique <- X_scaled[!duplicated(X_scaled), ]
+
+# Applying K-Means clustering to the unique data
+set.seed(123) # Ensuring reproducibility
+kmeans_result <- kmeans(X_scaled_unique, centers = 10, nstart = 25)
+
+# Since we removed duplicates, we need to ensure that the clustering results are correctly assigned back to the original data.
+# This step depends on how you want to handle duplicates in your original dataset for clustering assignment.
+# Here, we'll skip direct assignment and focus on t-SNE visualization with the unique dataset.
+
+# Applying t-SNE to the unique scaled data
+set.seed(123) # Ensuring reproducibility
+tsne_result <- Rtsne(X_scaled_unique, dims = 2, perplexity = 30, verbose = TRUE)
+
+# Creating a dataframe for plotting
+projection <- data.frame(x = tsne_result$Y[,1], y = tsne_result$Y[,2])
+projection$cluster = as.factor(kmeans_result$cluster)
+
+# Plotting using ggplot2
+ggplot(projection, aes(x = x, y = y, color = cluster)) +
+  geom_point(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "t-SNE Projection of Genres (Unique)", x = "t-SNE 1", y = "t-SNE 2") +
+  scale_color_brewer(palette = "Set3")
+
+```
+
+
+```{r}
+# Define your custom, darker color palette
+darker_colors <- c(
+  '1' = '#C0392B', # Assuming your clusters are numbered and '1' represents a cluster for which you want dark red
+  '2' = '#2E86C1',
+  '3' = '#8E44AD',
+  '4' = '#27AE60',
+  '5' = '#D35400',
+  '6' =  '#F1C40F', #Dark Yellow: #F1C40F (brighter but deeper)
+  '7' = '#8D6E63', #Dark Brown: #8D6E63
+  '8' = '#D81B60', #Dark Pink: #D81B60
+  '9' = '#7F8C8D', #Dark Grey: #7F8C8D
+  '10' = '#3498DB' #Deep Light Blue: #3498DB (more saturated rather than darker)
+)
+
+# Apply the custom colors to your plot
+ggplot(projection, aes(x = x, y = y, color = cluster)) +
+  geom_point(alpha = 0.5) +
+  scale_color_manual(values = darker_colors) +
+  theme_minimal() +
+  labs(title = "t-SNE Projection of Genres (Unique)", x = "t-SNE 1", y = "t-SNE 2")
+
+
+```
+
+
+
+
+
+##Clustering Songs with K-Means
+```{r}
+
+if (!requireNamespace("factoextra", quietly = TRUE)) install.packages("factoextra")
+if (!requireNamespace("cluster", quietly = TRUE)) install.packages("cluster")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+
+library(factoextra)
+library(cluster)
+library(ggplot2)
+```
+
+
+
+##Step 1: Scale the Data and Perform K-Means Clustering
+```{r}
+library(cluster) # For kmeans
+library(factoextra) # For fviz_cluster
+
+# Select numeric columns for clustering
+X <- data %>% select_if(is.numeric)
+
+# Scale the data
+X_scaled <- scale(X)
+
+# Perform K-means clustering
+set.seed(123) # Ensure reproducibility
+kmeans_result <- kmeans(X_scaled, centers = 20, nstart = 25)
+
+# Add cluster assignments to the original data
+data$cluster_label <- as.factor(kmeans_result$cluster)
+```
+
+#Build Recommender System
+Based on the analysis and visualizations, it’s clear that similar genres tend to have data points that are located close to each other while similar types of songs are also clustered together.
+This observation makes perfect sense. Similar genres will sound similar and will come from similar time periods while the same can be said for songs within those genres. We can use this idea to build a recommendation system by taking the data points of the songs a user has listened to and recommending songs corresponding to nearby data points.
+Spotipy is a Python client for the Spotify Web API that makes it easy for developers to fetch data and query Spotify’s catalog for songs. You have to install using pip install spotipy
+After installing Spotipy, you will need to create an app on the Spotify Developer’s page and save your Client ID and secret key.
+
+```{r}
+##Step 1: Install and Load Necessary Packages
+
+if (!requireNamespace("httr", quietly = TRUE)) install.packages("httr")
+if (!requireNamespace("jsonlite", quietly = TRUE)) install.packages("jsonlite")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+
+library(httr)
+library(jsonlite)
+library(dplyr)
+
+```
+
+##Step 2: Set Up Spotify API Authentication
+```{r}
+# Replace with your Spotify API credentials
+client_id <- "b424d4c7568e4a349ac944a81fbbc858"
+client_secret <- "933fd8ddf89b47f38d0172e2d0a06612"
+
+# Spotify API endpoint for token
+token_url <- "https://accounts.spotify.com/api/token"
+
+# Get access token
+response <- POST(token_url,
+                 authenticate(client_id, client_secret),
+                 body = list(grant_type = "client_credentials"),
+                 encode = "form")
+
+# Parse the response to get access token
+token <- content(response)$access_token
+
+
+```
+
+##Step 3: Define Function to Find Song
+```{r}
+find_song <- function(name, year) {
+    base_url <- "https://api.spotify.com/v1/search"
+    query <- paste0('track:', name, ' year:', year)
+    response <- GET(url = base_url, 
+                    query = list(q = query, type = 'track', limit = 1),
+                    add_headers(Authorization = paste("Bearer", token)))
+    
+    results <- content(response, "parsed")
+    
+    if (length(results$tracks$items) == 0) {
+        return(NULL)
+    }
+    
+    song_info <- results$tracks$items[[1]]
+    track_id <- song_info$id
+    
+    # Get audio features
+    audio_features_url <- paste0("https://api.spotify.com/v1/audio-features/", track_id)
+    audio_features_response <- GET(url = audio_features_url, add_headers(Authorization = paste("Bearer", token)))
+    audio_features <- content(audio_features_response, "parsed")
+    
+    song_data <- list(
+        name = name,
+        year = year,
+        explicit = as.integer(song_info$explicit),
+        duration_ms = song_info$duration_ms,
+        popularity = song_info$popularity
+    )
+    
+    song_data <- c(song_data, audio_features)
+    return(song_data)
+}
+
+
+
+
+```
+
+
+```{r}
+library(dplyr)
+library(stats)
+
+# Assuming spotify_data is your dataframe containing Spotify songs and their features
+# and that it includes all the necessary numerical columns like valence, acousticness, etc.
+spotify_data <- data
+# Define the numerical columns to be used
+number_cols <- c('valence', 'year', 'acousticness', 'danceability', 'duration_ms', 
+                 'energy', 'explicit', 'instrumentalness', 'key', 'liveness', 
+                 'loudness', 'mode', 'popularity', 'speechiness', 'tempo')
+
+# Simplified function to calculate the mean feature vector for a list of songs
+get_mean_vector <- function(song_list, spotify_data) {
+  song_vectors <- list()
+  
+  for (song in song_list) {
+    song_data <- spotify_data %>%
+      filter(name == song$name & year == song$year) %>%
+      select(all_of(number_cols)) %>%
+      as.matrix()
+    
+    if (nrow(song_data) > 0) {
+      song_vector <- colMeans(song_data, na.rm = TRUE)
+      song_vectors[[length(song_vectors) + 1]] <- song_vector
+    } else {
+      warning(paste('Warning:', song$name, 'does not exist in Spotify data or in database'))
+    }
+  }
+  
+  # Debugging: Print song_vectors before combining
+  print(song_vectors)
+  
+  if (length(song_vectors) == 0) {
+    return(NULL)
+  }
+  
+  song_matrix <- do.call(rbind, song_vectors)
+  mean_vector <- colMeans(song_matrix, na.rm = TRUE)
+  
+  return(mean_vector)
+}
+
+
+# Function to recommend songs based on the Euclidean distance to the mean vector
+recommend_songs <- function(song_list, spotify_data, n_songs = 10) {
+  mean_vector <- get_mean_vector(song_list, spotify_data)
+  
+  spotify_data$distance <- apply(spotify_data[, number_cols], 1, function(x) {
+    sqrt(sum((x - mean_vector)^2))
+  })
+  
+  recommended_songs <- spotify_data %>%
+    arrange(distance) %>%
+    select(name, year, artists, distance) %>%
+    head(n_songs)
+  
+  return(recommended_songs)
+}
+
+# Example song list
+song_list <- list(
+  list(name = 'Come As You Are', year = 1991),
+  list(name = 'Smells Like Teen Spirit', year = 1991),
+  list(name = 'Lithium', year = 1992),
+  list(name = 'All Apologies', year = 1993),
+  list(name = 'Stay Away', year = 1993)
+)
+
+# Call the recommend_songs function
+# Make sure `spotify_data` is your R dataframe equivalent of the Spotify dataset
+recommended_songs <- recommend_songs(song_list, spotify_data, 10)
+print(recommended_songs)
+
+```
+
